@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Công cụ OCR và Lấy CID</title>
+    <style>
+      body {
+        font-family: sans-serif;
+        display: flex;
+        padding: 20px;
+      }
+      #history-container {
+        width: 250px;
+        padding: 20px;
+        border-right: 1px solid #eee;
+        margin-right: 20px;
+        text-align: left;
+        overflow-y: auto;
+        height: 80vh;
+      }
+      #cid-history-list {
+        list-style-type: none;
+        padding: 0;
+      }
+      #cid-history-list li {
+        margin-bottom: 10px;
+        border-bottom: 1px solid #f0f0f0;
+        padding-bottom: 5px;
+      }
+      .main-content {
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      #api-selection {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+      #api-selection button {
+        padding: 15px 30px;
+        font-size: 1.1em;
+        cursor: pointer;
+      }
+      #drop-area {
+        border: 2px dashed #ccc;
+        border-radius: 10px;
+        padding: 30px;
+        text-align: center;
+        cursor: pointer;
+        margin-bottom: 20px;
+        width: 80%;
+        max-width: 600px;
+        display: none; /* Ẩn ban đầu */
+      }
+      #drop-area.highlight {
+        border-color: green;
+      }
+      input[type="file"] {
+        display: none;
+      }
+      #result {
+        margin-top: 20px;
+        font-size: 1.2em;
+        text-align: center;
+      }
+      #copy-button {
+        margin-top: 10px;
+        padding: 10px 20px;
+        font-size: 1em;
+        cursor: pointer;
+        display: none;
+      }
+      #copy-success-message {
+        margin-top: 10px;
+        color: green;
+        font-weight: bold;
+      }
+      #cid-result {
+        margin-top: 20px;
+        font-size: 1.2em;
+        text-align: center;
+      }
+      #cid-error-container {
+        margin-top: 10px;
+        color: red;
+        font-weight: bold;
+        text-align: center;
+      }
+      #manual-id-input {
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 20px;
+        width: 80%;
+        max-width: 400px;
+        border: 2px dashed #eee;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+      }
+      #manual-id-input label {
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      #manual-id-input input[type="text"] {
+        padding: 10px;
+        margin-bottom: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      #manual-id-input button {
+        padding: 10px 20px;
+        font-size: 1em;
+        cursor: pointer;
+        margin-bottom: 5px;
+      }
+      #balance-result {
+        margin-top: 20px;
+        font-size: 1.1em;
+        text-align: center;
+      }
+      #check-balance-button {
+        margin-top: 10px;
+        padding: 10px 20px;
+        font-size: 1em;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div style="display: flex">
+      <div
+        id="history-container"
+        style="
+          width: 250px;
+          padding: 20px;
+          border-right: 1px solid #eee;
+          margin-right: 20px;
+          text-align: left;
+          overflow-y: auto;
+          height: 80vh;
+        "
+      >
+        <h2>Lịch sử CID</h2>
+        <ul
+          id="cid-history-list"
+          style="list-style-type: none; padding: 0"
+        ></ul>
+      </div>
+
+      <div class="main-content">
+        <h1>Công cụ OCR và Lấy CID</h1>
+
+        <div id="api-selection">
+          <button id="select-getcidpro">Sử dụng getcid.pro</button>
+          <button id="select-pidkey">Sử dụng pidkey.com</button>
+        </div>
+
+        <div id="drop-area">
+          Kéo và thả hình ảnh vào đây hoặc
+          <label for="file-input">chọn tệp</label>
+          <input type="file" id="file-input" accept="image/*" />
+        </div>
+
+        <div id="result"></div>
+        <button id="copy-button">Sao chép ID</button>
+        <div id="copy-success-message"></div>
+
+        <div id="manual-id-input">
+          <label for="manual-id">Nhập Mã cài đặt (Installation ID):</label>
+          <input type="text" id="manual-id" placeholder="Nhập ID tại đây" />
+          <button id="fetch-cid-button">Lấy CID</button>
+        </div>
+
+        <div id="cid-result"></div>
+        <div id="cid-error-container"></div>
+
+        <button id="check-balance-button">Kiểm tra số dư API</button>
+        <div id="balance-result"></div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
