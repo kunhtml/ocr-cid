@@ -14,58 +14,212 @@ const manualConfirmationIdInput = document.getElementById(
 );
 const manualConfirmationId = document.getElementById("manual-confirmation-id");
 const cidHistoryList = document.getElementById("cid-history-list");
-const cidHistory = []; // Mảng để lưu trữ lịch sử CID
+const cidHistory = [];
+const historyContainerTitle = document.querySelector("#history-container h2");
 
 const selectGetcidproButton = document.getElementById("select-getcidpro");
 const selectPidkeyButton = document.getElementById("select-pidkey");
 const apiSelectionDiv = document.getElementById("api-selection");
+const apiStatusDiv = document.getElementById("api-status");
 
-let selectedApi = null; // Biến để theo dõi API được chọn
+const keyCheckContainer = document.getElementById("key-check-container");
+const keyInput = document.getElementById("key-input");
+const checkKeyButton = document.getElementById("check-key-button");
+const keyResultDiv = document.getElementById("key-result");
+const keyHistoryList = document.getElementById("key-history-list");
+const keyHistory = [];
 
-// Hàm định dạng CID
-function formatCID(cid) {
+const homeBtn = document.getElementById("home-btn");
+const paymentBtn = document.getElementById("payment-btn");
+const loginLogoutBtn = document.getElementById("login-logout-btn");
+const dashboardBtn = document.getElementById("dashboard-btn");
+
+let selectedApi = null;
+let cidQueue = [];
+let processingCIDs = {};
+const CID_POLLING_INTERVAL = 5000;
+let isLoggedIn = false; // Simple state for login/logout toggle
+
+function formatCID(cid, blockSize = 7) {
   if (!cid) return "";
   const parts = [];
-  for (let i = 0; i < cid.length; i += 7) {
-    parts.push(cid.substring(i, Math.min(i + 7, cid.length)));
+  for (let i = 0; i < cid.length; i += blockSize) {
+    parts.push(cid.substring(i, Math.min(i + blockSize, cid.length)));
   }
   return parts.join("-");
 }
 
 function updateCidHistoryDisplay() {
-  cidHistoryList.innerHTML = ""; // Xóa lịch sử hiện tại
-
-  // Hiển thị tối đa 10 mục lịch sử gần nhất
+  cidHistoryList.innerHTML = "";
+  historyContainerTitle.innerText = `Lịch sử CID - Tổng số đã dùng: ${cidHistory.length}`;
   const recentHistory = cidHistory.slice(-10).reverse();
+  let index = 1;
 
   recentHistory.forEach((item) => {
     const listItem = document.createElement("li");
-    listItem.innerHTML = `<strong>ID:</strong> ${item.installationId}<br><strong>CID:</strong> ${item.cid}`;
-    listItem.style.marginBottom = "10px";
+    const formattedTime =
+      new Date(item.timestamp).toLocaleTimeString("vi-VN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }) +
+      " " +
+      new Date(item.timestamp).toLocaleDateString("vi-VN");
+    const formattedInstallationId = formatCID(item.installationId, 7);
+    listItem.innerHTML = `<strong>${index}. Thời gian:</strong> ${formattedTime}<br><strong>ID:</strong> ${formattedInstallationId}<br><strong>CID:</strong> ${item.cid} `;
+
+    const copyHistoryButton = document.createElement("button");
+    copyHistoryButton.innerText = "Copy";
+    copyHistoryButton.style.marginLeft = "10px";
+    copyHistoryButton.style.cursor = "pointer";
+    copyHistoryButton.addEventListener("click", () => {
+      let textToCopy = `Installation ID : ${formattedInstallationId}\nEnter Confirmation ID\u00A0`;
+      const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
+      let cidParts = [];
+      if (item.apiSource === "pidkey") {
+        cidParts = item.cid.split("--");
+      } else if (item.apiSource === "getcidpro") {
+        cidParts = item.cid.split("-");
+      }
+      for (let i = 0; i < cidParts.length; i++) {
+        textToCopy += `\n${letters[i]} : ${cidParts[i]}`;
+      }
+      navigator.clipboard.writeText(textToCopy);
+    });
+
+    const retryCidButton = document.createElement("button");
+    retryCidButton.innerText = "Lấy lại CID";
+    retryCidButton.style.marginLeft = "10px";
+    retryCidButton.style.cursor = "pointer";
+    retryCidButton.addEventListener("click", () => {
+      handleCidRequest(item.installationId);
+    });
+
+    listItem.appendChild(copyHistoryButton);
+    listItem.appendChild(retryCidButton);
+    listItem.style.marginBottom = "15px";
     listItem.style.borderBottom = "1px solid #f0f0f0";
-    listItem.style.paddingBottom = "5px";
+    listItem.style.paddingBottom = "10px";
+    listItem.style.display = "flex";
+    listItem.style.alignItems = "center";
+    listItem.style.justifyContent = "space-between";
+    listItem.style.padding = "15px";
     cidHistoryList.appendChild(listItem);
+    index++;
   });
 }
 
-// Ẩn khu vực kéo thả ban đầu
-dropArea.style.display = "none";
-manualIdInput.style.display = "flex"; // Hiển thị ô nhập liệu thủ công ngay từ đầu
+function updateKeyHistoryDisplay() {
+  keyHistoryList.innerHTML = "";
+  const historyTitle = document.createElement("h3");
+  historyTitle.innerText = `Key History (${keyHistory.length})`;
+  historyTitle.style.margin = "10px 0";
+  keyHistoryList.appendChild(historyTitle);
 
-// Xử lý sự kiện click nút "Sử dụng getcid.pro"
+  keyHistory
+    .slice(-10)
+    .reverse()
+    .forEach((item) => {
+      const listItem = document.createElement("li");
+      const formattedTime = new Date(item.timestamp).toLocaleString("vi-VN");
+
+      listItem.innerHTML = `
+      <div><strong>Time:</strong> ${formattedTime}</div>
+      <div><strong>Key:</strong> ${item.keyname_with_dash}</div>
+      <div><strong>Product:</strong> ${item.prd}</div>
+      <div><strong>Error:</strong> ${item.errorcode}</div>
+      <div><strong>Remaining:</strong> ${item.remaining}</div>
+    `;
+
+      const buttonContainer = document.createElement("div");
+      buttonContainer.style.display = "flex";
+      buttonContainer.style.gap = "10px";
+      buttonContainer.style.marginTop = "10px";
+
+      const copyKeyButton = document.createElement("button");
+      copyKeyButton.innerText = "Copy";
+      copyKeyButton.style.marginLeft = "0";
+      copyKeyButton.style.cursor = "pointer";
+      copyKeyButton.addEventListener("click", () => {
+        navigator.clipboard
+          .writeText(item.keyname_with_dash)
+          .then(() => {
+            copyKeyButton.innerText = "Copied!";
+            setTimeout(() => (copyKeyButton.innerText = "Copy"), 2000);
+          })
+          .catch((err) => console.error("Copy failed:", err));
+      });
+
+      const recheckKeyButton = document.createElement("button");
+      recheckKeyButton.innerText = "Check lại Key";
+      recheckKeyButton.style.marginLeft = "0";
+      recheckKeyButton.style.cursor = "pointer";
+      recheckKeyButton.addEventListener("click", () => {
+        checkKey(item.keyname_with_dash);
+      });
+
+      buttonContainer.appendChild(copyKeyButton);
+      buttonContainer.appendChild(recheckKeyButton);
+      listItem.appendChild(buttonContainer);
+      listItem.style.marginBottom = "10px";
+      listItem.style.padding = "10px";
+      listItem.style.borderBottom = "1px solid #ddd";
+      keyHistoryList.appendChild(listItem);
+    });
+}
+
+async function checkKey(key) {
+  keyResultDiv.innerText = "Checking key...";
+  try {
+    const apiUrl = `https://pidkey.com/ajax/pidms_api?keys=${encodeURIComponent(
+      key
+    )}&justgetdescription=1&apikey=[apikey]`;
+    const response = await fetch(apiUrl);
+    const data = await response.json();
+
+    if (data && data[0]) {
+      const result = data[0];
+      const keyInfo = {
+        keyname_with_dash: result.keyname_with_dash || "N/A",
+        prd: result.prd || "N/A",
+        errorcode: result.errorcode || "N/A",
+        remaining: result.remaining || "N/A",
+        timestamp: new Date().getTime(),
+      };
+
+      keyResultDiv.innerHTML = `
+        <strong>Key:</strong> ${keyInfo.keyname_with_dash}<br>
+        <strong>Product:</strong> ${keyInfo.prd}<br>
+        <strong>Error Code:</strong> ${keyInfo.errorcode}<br>
+        <strong>Remaining:</strong> ${keyInfo.remaining}
+      `;
+
+      keyHistory.push(keyInfo);
+      updateKeyHistoryDisplay();
+    } else {
+      keyResultDiv.innerText = "No data returned from API";
+    }
+  } catch (error) {
+    console.error("Error checking key:", error);
+    keyResultDiv.innerText = "Error checking key";
+  }
+}
+
+dropArea.style.display = "none";
+manualIdInput.style.display = "flex";
+
 selectGetcidproButton.addEventListener("click", () => {
   selectedApi = "getcidpro";
-  checkBalanceButton.click(); // Gọi kiểm tra số dư ngay khi chọn getcid.pro
+  apiStatusDiv.innerText = "Đang sử dụng API: getcid.pro";
+  checkBalanceButton.click();
   dropArea.style.display = "block";
-  apiSelectionDiv.style.display = "none";
   resetResults();
 });
 
-// Xử lý sự kiện click nút "Sử dụng pidkey.com"
 selectPidkeyButton.addEventListener("click", () => {
   selectedApi = "pidkey";
+  apiStatusDiv.innerText = "Đang sử dụng API: pidkey.com";
   dropArea.style.display = "block";
-  apiSelectionDiv.style.display = "none";
   resetResults();
 });
 
@@ -78,18 +232,15 @@ function resetResults() {
   cidErrorContainer.innerHTML = "";
 }
 
-// Ngăn chặn hành vi mặc định khi kéo qua
 dropArea.addEventListener("dragover", (e) => {
   e.preventDefault();
   dropArea.classList.add("highlight");
 });
 
-// Loại bỏ lớp highlight khi rời khỏi khu vực kéo thả
 dropArea.addEventListener("dragleave", () => {
   dropArea.classList.remove("highlight");
 });
 
-// Xử lý khi thả tệp
 dropArea.addEventListener("drop", (e) => {
   e.preventDefault();
   dropArea.classList.remove("highlight");
@@ -97,7 +248,6 @@ dropArea.addEventListener("drop", (e) => {
   handleFile(file);
 });
 
-// Xử lý khi chọn tệp bằng input
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   handleFile(file);
@@ -137,6 +287,135 @@ async function handleFile(file) {
   }
 }
 
+async function handleCidRequest(installationId) {
+  if (!cidQueue.includes(installationId) && !processingCIDs[installationId]) {
+    cidQueue.push(installationId);
+    addToCidHistory(installationId, "Đang lấy CID", selectedApi);
+    processCidQueue();
+  } else if (processingCIDs[installationId]) {
+    alert(`Đang lấy CID cho Installation ID: ${installationId}`);
+  } else if (
+    cidHistory.find(
+      (item) =>
+        item.installationId === installationId && item.cid !== "Đang lấy CID"
+    )
+  ) {
+    alert(`CID cho Installation ID: ${installationId} đã được lấy.`);
+  } else {
+    alert(`Installation ID: ${installationId} đã có trong hàng đợi.`);
+  }
+}
+
+function addToCidHistory(
+  installationId,
+  cid = "Đang lấy CID",
+  apiSource = selectedApi
+) {
+  const timestamp = new Date().getTime();
+  const existingIndex = cidHistory.findIndex(
+    (item) =>
+      item.installationId === installationId && item.cid === "Đang lấy CID"
+  );
+  if (existingIndex !== -1 && cid !== "Đang lấy CID") {
+    cidHistory[existingIndex] = { installationId, cid, timestamp, apiSource };
+  } else if (
+    !cidHistory.find(
+      (item) => item.installationId === installationId && item.cid === cid
+    )
+  ) {
+    cidHistory.push({ installationId, cid, timestamp, apiSource });
+  }
+  updateCidHistoryDisplay();
+}
+
+async function processCidQueue() {
+  if (cidQueue.length > 0) {
+    const currentIID = cidQueue.shift();
+    processingCIDs[currentIID] = true;
+    startFetchingCid(currentIID, selectedApi);
+  }
+}
+
+async function startFetchingCid(iid, api) {
+  if (api === "getcidpro") {
+    const cidApiUrl = `/getcid-proxy?iid=${iid}`;
+    try {
+      const response = await fetch(cidApiUrl);
+      const data = await response.json();
+      if (data && data.cid) {
+        const formattedCID = formatCID(data.cid, 6);
+        addToCidHistory(iid, formattedCID, api);
+        delete processingCIDs[iid];
+        processCidQueue();
+      } else {
+        startCidPolling(iid, api);
+      }
+    } catch (error) {
+      console.error(`Lỗi khi gọi API lấy CID (${api}):`, error);
+      addToCidHistory(iid, "Lỗi khi lấy CID", api);
+      delete processingCIDs[iid];
+      processCidQueue();
+    }
+  } else if (api === "pidkey") {
+    startCidPolling(iid, api);
+  }
+}
+
+function startCidPolling(iid, api) {
+  const intervalId = setInterval(async () => {
+    const cid = await checkCidStatus(iid, api);
+    if (cid) {
+      addToCidHistory(iid, cid, api);
+      delete processingCIDs[iid];
+      clearInterval(intervalId);
+      processCidQueue();
+    } else if (!processingCIDs[iid]) {
+      clearInterval(intervalId);
+    }
+  }, CID_POLLING_INTERVAL);
+  processingCIDs[iid] = intervalId;
+}
+
+async function checkCidStatus(iid, api) {
+  if (api === "getcidpro") {
+    const cidApiUrl = `/getcid-proxy?iid=${iid}`;
+    try {
+      const response = await fetch(cidApiUrl);
+      const data = await response.json();
+      if (data && data.cid) {
+        return formatCID(data.cid, 6);
+      }
+    } catch (error) {
+      console.error(`Lỗi polling CID (${api}):`, error);
+      delete processingCIDs[iid];
+    }
+  } else if (api === "pidkey") {
+    const checkCidApiUrl = `/check-cid-proxy?iid=${iid}`;
+    try {
+      const response = await fetch(checkCidApiUrl);
+      const data = await response.json();
+      if (data && data.have_cid === 1 && data.confirmationid) {
+        return formatCID(data.confirmationid);
+      } else if (
+        data &&
+        data.result &&
+        data.result.includes("Please upgrade")
+      ) {
+        const getCidFromIidApiUrl = `/get-cid-from-iid-proxy?iid=${iid}`;
+        const getCidResponse = await fetch(getCidFromIidApiUrl);
+        const getCidData = await getCidResponse.json();
+        if (getCidData && getCidData.confirmationid) {
+          return formatCID(getCidData.confirmationid);
+        }
+      }
+    } catch (error) {
+      console.error(`Lỗi polling CID (${api}):`, error);
+      delete processingCIDs[iid];
+    }
+  }
+  return null;
+}
+
 async function sendImageToServer(base64Image, mimeType) {
   try {
     const response = await fetch("/ocr", {
@@ -149,90 +428,18 @@ async function sendImageToServer(base64Image, mimeType) {
     const data = await response.json();
     if (data.installationId) {
       const installationIdWithSpaces = data.installationId;
-      const installationId = installationIdWithSpaces.replace(/\s/g, "");
-      resultDiv.innerText = `Mã cài đặt: ${installationIdWithSpaces}`;
+      const installationIdWithoutSpaces = installationIdWithSpaces.replace(
+        /\s/g,
+        ""
+      );
+      const formattedInstallationId = formatCID(installationIdWithoutSpaces);
+      resultDiv.innerText = `Mã cài đặt: ${formattedInstallationId}`;
       manualIdInput.value = installationIdWithSpaces;
       copyButton.style.display = "inline-block";
       copySuccessMessage.innerText = "";
-
-      cidResultDiv.innerHTML = `Đang lấy CID (${selectedApi})...`;
+      cidResultDiv.innerHTML = "";
       cidErrorContainer.innerHTML = "";
-
-      if (selectedApi === "getcidpro") {
-        const cidApiUrl = `/getcid-proxy?iid=${installationId}`;
-        try {
-          const cidResponse = await fetch(cidApiUrl);
-          const cidData = await cidResponse.json();
-          cidResultDiv.innerHTML = "";
-          cidErrorContainer.innerHTML = "";
-          if (cidData && cidData.cid) {
-            const formattedCID = formatCID(cidData.cid);
-            displayCidResult(formattedCID);
-            checkBalanceButton.click(); // Tự động kiểm tra số dư
-          } else if (cidData && cidData.error) {
-            cidErrorContainer.innerText = `Lỗi: ${cidData.error}`;
-          } else {
-            cidResultDiv.innerText = "Không tìm thấy CID.";
-          }
-        } catch (error) {
-          console.error("Lỗi khi gọi API lấy CID (getcid.pro):", error);
-          cidResultDiv.innerText = "Lỗi khi lấy CID từ server (getcid.pro).";
-          cidErrorContainer.innerHTML = "";
-        }
-      } else if (selectedApi === "pidkey") {
-        const checkCidApiUrl = `/check-cid-proxy?iid=${installationId}`;
-        try {
-          const checkCidResponse = await fetch(checkCidApiUrl);
-          const checkCidData = await checkCidResponse.json();
-          cidResultDiv.innerHTML = "";
-          cidErrorContainer.innerHTML = "";
-          if (
-            checkCidData &&
-            checkCidData.have_cid === 1 &&
-            checkCidData.confirmationid
-          ) {
-            const formattedCID = formatCID(checkCidData.confirmationid);
-            displayCidResult(formattedCID);
-          } else if (
-            checkCidData &&
-            checkCidData.result ===
-              'Please upgrade to "Account Professional" to get Confirmation ID for this IID.'
-          ) {
-            cidResultDiv.innerText = "Đang lấy CID (pidkey.com)...";
-            const getCidFromIidApiUrl = `/get-cid-from-iid-proxy?iid=${installationId}`;
-            try {
-              const getCidResponse = await fetch(getCidFromIidApiUrl);
-              const getCidData = await getCidResponse.json();
-              if (getCidData && getCidData.confirmationid) {
-                const formattedCID = formatCID(getCidData.confirmationid);
-                displayCidResult(formattedCID);
-              } else {
-                cidResultDiv.innerText = "Không tìm thấy CID.";
-              }
-            } catch (newCidError) {
-              console.error(
-                "Lỗi khi gọi API lấy CID (pidkey.com):",
-                newCidError
-              );
-              cidResultDiv.innerText =
-                "Lỗi khi lấy CID từ server (pidkey.com).";
-            }
-          } else if (
-            checkCidData &&
-            checkCidData.status === "failed" &&
-            checkCidData.errormsg
-          ) {
-            cidErrorContainer.innerText = `Trạng thái: ${checkCidData.status}\nLỗi: ${checkCidData.errormsg}`;
-          } else {
-            cidResultDiv.innerText = "Không tìm thấy CID.";
-          }
-        } catch (error) {
-          console.error("Lỗi khi gọi API kiểm tra CID (pidkey.com):", error);
-          cidResultDiv.innerText =
-            "Lỗi khi kiểm tra CID từ server (pidkey.com).";
-          cidErrorContainer.innerHTML = "";
-        }
-      }
+      handleCidRequest(installationIdWithoutSpaces);
     } else if (data.error) {
       resultDiv.innerText = `Lỗi: ${data.error}`;
       copyButton.style.display = "none";
@@ -258,99 +465,46 @@ fetchCidButton.addEventListener("click", async () => {
     alert("Vui lòng chọn API trước khi nhập ID.");
     return;
   }
-  const manualInstallationId = manualIdInput.value.trim();
-  if (manualInstallationId) {
-    const processedId = manualInstallationId.includes("-")
-      ? manualInstallationId.replace(/-/g, "")
-      : manualInstallationId;
-    resultDiv.innerText = `Mã cài đặt: ${manualInstallationId}`;
+  const manualInstallationIdWithSpaces = manualIdInput.value.trim();
+  if (manualInstallationIdWithSpaces) {
+    const manualInstallationIdWithoutSpaces =
+      manualInstallationIdWithSpaces.replace(/-/g, "");
+    const formattedInstallationId = formatCID(
+      manualInstallationIdWithoutSpaces
+    );
+    resultDiv.innerText = `Mã cài đặt: ${formattedInstallationId}`;
     copyButton.style.display = "inline-block";
     copySuccessMessage.innerText = "";
-    cidResultDiv.innerHTML = `Đang lấy CID (${selectedApi})...`;
+    cidResultDiv.innerHTML = "";
     cidErrorContainer.innerHTML = "";
-
-    if (selectedApi === "getcidpro") {
-      const cidApiUrl = `/getcid-proxy?iid=${processedId}`;
-      try {
-        const cidResponse = await fetch(cidApiUrl);
-        const cidData = await cidResponse.json();
-        cidResultDiv.innerHTML = "";
-        cidErrorContainer.innerHTML = "";
-        if (cidData && cidData.cid) {
-          const formattedCID = formatCID(cidData.cid);
-          displayCidResult(formattedCID);
-          checkBalanceButton.click(); // Tự động kiểm tra số dư
-        } else if (cidData && cidData.error) {
-          cidErrorContainer.innerText = `Lỗi: ${cidData.error}`;
-        } else {
-          cidResultDiv.innerText = "Không tìm thấy CID.";
-        }
-      } catch (error) {
-        console.error("Lỗi khi gọi API lấy CID (getcid.pro):", error);
-        cidResultDiv.innerText = "Lỗi khi lấy CID từ server (getcid.pro).";
-        cidErrorContainer.innerHTML = "";
-      }
-    } else if (selectedApi === "pidkey") {
-      const checkCidApiUrl = `/check-cid-proxy?iid=${processedId}`;
-      try {
-        const checkCidResponse = await fetch(checkCidApiUrl);
-        const checkCidData = await checkCidResponse.json();
-        cidResultDiv.innerHTML = "";
-        cidErrorContainer.innerHTML = "";
-        if (
-          checkCidData &&
-          checkCidData.have_cid === 1 &&
-          checkCidData.confirmationid
-        ) {
-          const formattedCID = formatCID(checkCidData.confirmationid);
-          displayCidResult(formattedCID);
-        } else if (
-          checkCidData &&
-          checkCidData.result ===
-            'Please upgrade to "Account Professional" to get Confirmation ID for this IID.'
-        ) {
-          cidResultDiv.innerText = "Đang lấy CID (pidkey.com)...";
-          const getCidFromIidApiUrl = `/get-cid-from-iid-proxy?iid=${processedId}`;
-          try {
-            const getCidResponse = await fetch(getCidFromIidApiUrl);
-            const getCidData = await getCidResponse.json();
-            if (getCidData && getCidData.confirmationid) {
-              const formattedCID = formatCID(getCidData.confirmationid);
-              displayCidResult(formattedCID);
-            } else {
-              cidResultDiv.innerText = "Không tìm thấy CID.";
-            }
-          } catch (newCidError) {
-            console.error("Lỗi khi gọi API lấy CID (pidkey.com):", newCidError);
-            cidResultDiv.innerText = "Lỗi khi lấy CID từ server (pidkey.com).";
-          }
-        } else if (
-          checkCidData &&
-          checkCidData.status === "failed" &&
-          checkCidData.errormsg
-        ) {
-          cidErrorContainer.innerText = `Trạng thái: ${checkCidData.status}\nLỗi: ${checkCidData.errormsg}`;
-        } else {
-          cidResultDiv.innerText = "Không tìm thấy CID.";
-        }
-      } catch (error) {
-        console.error("Lỗi khi gọi API kiểm tra CID (pidkey.com):", error);
-        cidResultDiv.innerText = "Lỗi khi kiểm tra CID từ server (pidkey.com).";
-        cidErrorContainer.innerHTML = "";
-      }
-    } else {
-      resultDiv.innerText = "Vui lòng nhập Mã cài đặt.";
-      copyButton.style.display = "none";
-      copySuccessMessage.innerText = "";
-      cidResultDiv.innerHTML = "";
-      cidErrorContainer.innerHTML = "";
-    }
+    handleCidRequest(manualInstallationIdWithoutSpaces);
+  } else {
+    resultDiv.innerText = "Vui lòng nhập Mã cài đặt.";
+    copyButton.style.display = "none";
+    copySuccessMessage.innerText = "";
+    cidResultDiv.innerHTML = "";
+    cidErrorContainer.innerHTML = "";
   }
 });
 
-function displayCidResult(formattedCID) {
+function displayCidResult(formattedCID, apiSource) {
   const cidTextSpan = document.createElement("span");
-  cidTextSpan.innerText = `CID: ${formattedCID} `;
+  let displayedCID = "";
+  const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  let cidParts = [];
+
+  if (apiSource === "pidkey") {
+    cidParts = formattedCID.split("--");
+    for (let i = 0; i < cidParts.length; i++) {
+      displayedCID += `${letters[i]} : ${cidParts[i]}\n`;
+    }
+  } else if (apiSource === "getcidpro") {
+    cidParts = formattedCID.split("-");
+    for (let i = 0; i < Math.min(cidParts.length, 8); i++) {
+      displayedCID += `${letters[i]} : ${cidParts[i]}\n`;
+    }
+  }
+  cidTextSpan.innerText = `CID:\n${displayedCID.trim()}`;
 
   const copyCidButton = document.createElement("button");
   copyCidButton.innerText = "Copy CID";
@@ -359,16 +513,13 @@ function displayCidResult(formattedCID) {
   copyCidButton.style.cursor = "pointer";
   copyCidButton.addEventListener("click", async () => {
     try {
-      // Lấy Mã cài đặt từ resultDiv
       const installationIdWithSpaces = document
         .getElementById("result")
         .innerText.replace("Mã cài đặt: ", "");
       const installationIdWithoutSpaces = installationIdWithSpaces.replace(
-        /\s/g,
+        /-/g,
         ""
       );
-
-      // Định dạng Mã cài đặt với khoảng trắng
       const installationIdParts = [];
       for (let i = 0; i < installationIdWithoutSpaces.length; i += 7) {
         installationIdParts.push(
@@ -379,13 +530,20 @@ function displayCidResult(formattedCID) {
         );
       }
       const formattedInstallationId = installationIdParts.join(" ");
-
-      // Tạo nội dung để sao chép (định dạng CID theo yêu cầu mới)
-      const cidParts = formattedCID.split("--");
-      let textToCopy = `Installation ID : ${formattedInstallationId}\nEnter Confirmation ID\u00A0`; // \u00A0 là ký tự khoảng trắng không ngắt dòng
+      let textToCopy = `Installation ID : ${formattedInstallationId}\nEnter Confirmation ID\u00A0`;
       const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
-      for (let i = 0; i < cidParts.length; i++) {
-        textToCopy += `\n${letters[i]} : ${cidParts[i]}`;
+      let cidParts = [];
+
+      if (apiSource === "pidkey") {
+        cidParts = formattedCID.split("--");
+        for (let i = 0; i < cidParts.length; i++) {
+          textToCopy += `\n${letters[i]} : ${cidParts[i]}`;
+        }
+      } else if (apiSource === "getcidpro") {
+        cidParts = formattedCID.split("-");
+        for (let i = 0; i < Math.min(cidParts.length, 8); i++) {
+          textToCopy += `\n${letters[i]} : ${cidParts[i]}`;
+        }
       }
 
       await navigator.clipboard.writeText(textToCopy);
@@ -393,9 +551,7 @@ function displayCidResult(formattedCID) {
       copyCidSuccessMessage.innerText = " Đã sao chép!";
       copyCidSuccessMessage.style.color = "green";
       cidResultDiv.appendChild(copyCidSuccessMessage);
-      setTimeout(() => {
-        copyCidSuccessMessage.remove();
-      }, 2000);
+      setTimeout(() => copyCidSuccessMessage.remove(), 2000);
     } catch (err) {
       console.error("Không thể sao chép CID:", err);
       const copyCidErrorMessage = document.createElement("span");
@@ -407,53 +563,58 @@ function displayCidResult(formattedCID) {
 
   cidResultDiv.appendChild(cidTextSpan);
   cidResultDiv.appendChild(copyCidButton);
-
-  // Thêm vào lịch sử và cập nhật hiển thị
-  const installationId = document
-    .getElementById("result")
-    .innerText.replace("Mã cài đặt: ", "");
-  cidHistory.push({ installationId: installationId, cid: formattedCID });
-  updateCidHistoryDisplay();
 }
 
-// Chức năng copy ID vào clipboard
 copyButton.addEventListener("click", async () => {
   const installationId = resultDiv.innerText.replace("Mã cài đặt: ", "");
   try {
     await navigator.clipboard.writeText(installationId);
     copySuccessMessage.innerText = "Đã sao chép!";
-    setTimeout(() => {
-      copySuccessMessage.innerText = "";
-    }, 2000);
+    setTimeout(() => (copySuccessMessage.innerText = ""), 2000);
   } catch (err) {
     console.error("Không thể sao chép ID:", err);
     copySuccessMessage.innerText = "Lỗi khi sao chép ID.";
   }
 });
 
-// Reset trạng thái khi kéo thả hoặc chọn tệp mới
-dropArea.addEventListener("dragenter", () => {
-  resetResults();
-});
+dropArea.addEventListener("dragenter", resetResults);
 
-fileInput.addEventListener("click", () => {
-  resetResults();
-});
+fileInput.addEventListener("click", resetResults);
 
-// Xử lý sự kiện click nút kiểm tra số dư
 checkBalanceButton.addEventListener("click", async () => {
   balanceResultDiv.innerText = "Đang kiểm tra số dư...";
   try {
     const balanceResponse = await fetch("/balance-proxy");
-    const balanceData = await balanceResponse.text();
-    balanceResultDiv.innerText = `Số dư: ${balanceData}`;
+    const balanceData = await balanceResponse.json();
+    let balanceText = "";
+    for (const key in balanceData) {
+      if (balanceData.hasOwnProperty(key)) {
+        balanceText += `${key}: ${balanceData[key]}\n`;
+      }
+    }
+    balanceResultDiv.innerText = `Số dư:\n${balanceText.trim()}`;
   } catch (error) {
     console.error("Lỗi khi kiểm tra số dư:", error);
     balanceResultDiv.innerText = "Lỗi khi kiểm tra số dư.";
   }
 });
 
-// Xử lý sự kiện dán (Ctrl+V) trên toàn bộ document
+checkKeyButton.addEventListener("click", () => {
+  const key = keyInput.value.trim();
+  if (key) {
+    checkKey(key);
+    keyInput.value = "";
+  } else {
+    keyResultDiv.innerText = "Please enter a key";
+  }
+});
+
+keyInput.addEventListener("keypress", (e) => {
+  if (e.key === "Enter") {
+    checkKeyButton.click();
+  }
+});
+
 document.addEventListener("paste", async (e) => {
   if (!selectedApi) {
     alert("Vui lòng chọn API trước khi dán ảnh.");
@@ -495,4 +656,38 @@ document.addEventListener("paste", async (e) => {
     cidResultDiv.innerHTML = "";
     cidErrorContainer.innerHTML = "";
   }
+});
+
+// Navbar event listeners
+homeBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  alert("Redirect to Home page (placeholder)");
+  // Replace with actual redirect logic: window.location.href = '/home';
+});
+
+paymentBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  alert("Redirect to Payment page (placeholder)");
+  // Replace with actual redirect logic: window.location.href = '/payment';
+});
+
+loginLogoutBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (isLoggedIn) {
+    isLoggedIn = false;
+    loginLogoutBtn.innerText = "Login";
+    alert("Logged out (placeholder)");
+    // Add actual logout logic here
+  } else {
+    isLoggedIn = true;
+    loginLogoutBtn.innerText = "Logout";
+    alert("Logged in (placeholder)");
+    // Add actual login logic here
+  }
+});
+
+dashboardBtn.addEventListener("click", (e) => {
+  e.preventDefault();
+  alert("Redirect to Dashboard page (placeholder)");
+  // Replace with actual redirect logic: window.location.href = '/dashboard';
 });
