@@ -7,11 +7,42 @@
     <style>
       body {
         font-family: sans-serif;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      #navbar {
+        background-color: #333;
+        padding: 10px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: white;
+      }
+      #navbar a {
+        color: white;
+        text-decoration: none;
+        padding: 10px 20px;
+        background-color: #555;
+        border-radius: 5px;
+        margin: 0 5px;
+      }
+      #navbar a:hover {
+        background-color: #777;
+      }
+      #navbar .right {
+        display: flex;
+        align-items: center;
+      }
+      #content {
         display: flex;
         padding: 20px;
+        flex-grow: 1;
       }
       #history-container {
-        width: 250px;
+        width: 300px;
         padding: 20px;
         border-right: 1px solid #eee;
         margin-right: 20px;
@@ -36,13 +67,20 @@
       }
       #api-selection {
         display: flex;
-        gap: 20px;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
         margin-bottom: 20px;
       }
       #api-selection button {
         padding: 15px 30px;
         font-size: 1.1em;
         cursor: pointer;
+      }
+      #api-status {
+        font-size: 1em;
+        color: #333;
+        margin-top: 10px;
       }
       #drop-area {
         border: 2px dashed #ccc;
@@ -53,7 +91,7 @@
         margin-bottom: 20px;
         width: 80%;
         max-width: 600px;
-        display: none; /* Ẩn ban đầu */
+        display: none;
       }
       #drop-area.highlight {
         border-color: green;
@@ -129,14 +167,76 @@
         font-size: 1em;
         cursor: pointer;
       }
+      #key-check-container {
+        width: 300px;
+        padding: 20px;
+        border-left: 1px solid #eee;
+        margin-left: 20px;
+        text-align: left;
+        overflow-y: auto;
+        height: 80vh;
+      }
+      #key-check-container h2 {
+        margin-top: 0;
+        font-size: 1.2em;
+      }
+      #key-input {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        box-sizing: border-box;
+      }
+      #check-key-button {
+        width: 100%;
+        padding: 10px 20px;
+        font-size: 1em;
+        cursor: pointer;
+        margin-bottom: 10px;
+      }
+      #key-result {
+        margin-bottom: 15px;
+        font-size: 1em;
+      }
+      #key-history-list {
+        list-style-type: none;
+        padding: 0;
+      }
+      #key-history-list li {
+        margin-bottom: 10px;
+        padding: 10px;
+        border-bottom: 1px solid #f0f0f0;
+        display: flex;
+        flex-direction: column;
+      }
+      #key-history-list h3 {
+        margin: 10px 0;
+        font-size: 1.1em;
+      }
+      #key-history-list button {
+        margin-left: 10px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
-    <div style="display: flex">
+    <div id="navbar">
+      <div class="left">
+        <a href="#" id="home-btn">Home</a>
+        <a href="#" id="payment-btn">Payment</a>
+      </div>
+      <div class="right">
+        <a href="#" id="login-logout-btn">Login</a>
+        <a href="#" id="dashboard-btn">Dashboard</a>
+      </div>
+    </div>
+
+    <div id="content" style="display: flex">
       <div
         id="history-container"
         style="
-          width: 250px;
+          width: 1000px;
           padding: 20px;
           border-right: 1px solid #eee;
           margin-right: 20px;
@@ -156,8 +256,11 @@
         <h1>Công cụ OCR và Lấy CID</h1>
 
         <div id="api-selection">
-          <button id="select-getcidpro">Sử dụng getcid.pro</button>
-          <button id="select-pidkey">Sử dụng pidkey.com</button>
+          <div style="display: flex; gap: 20px">
+            <button id="select-getcidpro">Sử dụng getcid.pro</button>
+            <button id="select-pidkey">Sử dụng pidkey.com</button>
+          </div>
+          <div id="api-status"></div>
         </div>
 
         <div id="drop-area">
@@ -181,6 +284,14 @@
 
         <button id="check-balance-button">Kiểm tra số dư API</button>
         <div id="balance-result"></div>
+      </div>
+
+      <div id="key-check-container">
+        <h2>Lịch sử Key</h2>
+        <input type="text" id="key-input" placeholder="Nhập key tại đây" />
+        <button id="check-key-button">Kiểm tra Key</button>
+        <div id="key-result"></div>
+        <ul id="key-history-list"></ul>
       </div>
     </div>
 
