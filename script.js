@@ -39,6 +39,26 @@ let cidQueue = [];
 let processingCIDs = {};
 const CID_POLLING_INTERVAL = 5000;
 let isLoggedIn = false;
+let pidkeyApiKey = null;
+
+async function fetchPidkeyApiKey() {
+  try {
+    const response = await fetch("/api/get-pidkey-api-key");
+    const data = await response.json();
+    if (data && data.apiKey) {
+      pidkeyApiKey = data.apiKey;
+      console.log("Đã lấy API key Pidkey thành công.");
+      // Sau khi lấy được API key, bạn có thể thực hiện các hành động khác nếu cần.
+    } else {
+      console.error("Không thể lấy API key Pidkey từ server.");
+    }
+  } catch (error) {
+    console.error("Lỗi khi gọi endpoint lấy API key Pidkey:", error);
+  }
+}
+
+// Gọi hàm này khi trang web của bạn tải để lấy API key Pidkey
+fetchPidkeyApiKey();
 
 function formatCID(cid, blockSize = 7) {
   if (!cid) return "";
@@ -77,8 +97,10 @@ function updateCidHistoryDisplay() {
     copyHistoryButton.style.cursor = "pointer";
     copyHistoryButton.addEventListener("click", () => {
       // --- Start Timezone Conversion and Formatting ---
-      const dateObject = new Date(item.timestamp); // Create Date object from original timestamp // 1. Format Date Part in Malaysian Timezone (Asia/Kuala_Lumpur) // Use 'en-GB' locale for DD/MM/YYYY format, includes weekday short.
+      const dateObject = new Date(item.timestamp); // Create Date object from original timestamp
 
+      // 1. Format Date Part in Malaysian Timezone (Asia/Kuala_Lumpur)
+      // Use 'en-GB' locale for DD/MM/YYYY format, includes weekday short.
       const dateString = dateObject
         .toLocaleDateString("en-GB", {
           timeZone: "Asia/Kuala_Lumpur",
@@ -87,25 +109,33 @@ function updateCidHistoryDisplay() {
           month: "2-digit", // e.g., "04"
           year: "numeric", // e.g., "2025"
         })
-        .replace(/,/g, ""); // Remove potential commas added by locale formatting // 2. Format Time Part (HH:MM:SS) in Malaysian Timezone // Use 'en-US' or similar locale that reliably gives HH:MM:SS with hour12: false
+        .replace(/,/g, ""); // Remove potential commas added by locale formatting
 
+      // 2. Format Time Part (HH:MM:SS) in Malaysian Timezone
+      // Use 'en-US' or similar locale that reliably gives HH:MM:SS with hour12: false
       const timeStringHHMMSS = dateObject.toLocaleTimeString("en-US", {
         timeZone: "Asia/Kuala_Lumpur",
         hour: "2-digit", // e.g., "22" (forces 24-hour format)
         minute: "2-digit", // e.g., "40"
         second: "2-digit", // e.g., "43"
         hour12: false, // Use 24-hour format
-      }); // 3. Get Milliseconds (Timezone independent for a given instant) // Extract from the original date object and format
+      });
 
+      // 3. Get Milliseconds (Timezone independent for a given instant)
+      // Extract from the original date object and format
       const milliseconds = String(dateObject.getMilliseconds())
         .padStart(3, "0")
-        .substring(0, 2); // 4. Construct the final DATE and TIME lines
+        .substring(0, 2);
 
+      // 4. Construct the final DATE and TIME lines
       const dateLine = `DATE: ${dateString}`; // dateString already contains "Day DD/MM/YYYY"
       const timeString = `${timeStringHHMMSS}.${milliseconds}`;
-      const timeLine = `TIME: ${timeString} GMT+8`; // Append the correct label // 5. Initialize textToCopy with the Malaysia-time formatted strings
+      const timeLine = `TIME: ${timeString} GMT+8`; // Append the correct label
 
-      let textToCopy = `${dateLine}\n${timeLine}\n\nInstallation ID : ${formattedInstallationId}\nEnter Confirmation ID\u00A0`; // --- End Timezone Conversion and Formatting ---
+      // 5. Initialize textToCopy with the Malaysia-time formatted strings
+      let textToCopy = `${dateLine}\n${timeLine}\n\nInstallation ID : ${formattedInstallationId}\nEnter Confirmation ID\u00A0`;
+      // --- End Timezone Conversion and Formatting ---
+
       const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
       let cidParts = [];
       if (item.apiSource === "pidkey") {
@@ -126,7 +156,8 @@ function updateCidHistoryDisplay() {
           }, 2000);
         })
         .catch((err) => {
-          console.error("Failed to copy text: ", err); // Optional: Show error feedback
+          console.error("Failed to copy text: ", err);
+          // Optional: Show error feedback
           copyHistoryButton.innerText = "Lỗi Copy!";
           setTimeout(() => {
             copyHistoryButton.innerText = "Copy";
@@ -143,7 +174,8 @@ function updateCidHistoryDisplay() {
     });
 
     listItem.appendChild(copyHistoryButton);
-    listItem.appendChild(retryCidButton); // ... rest of the styling ...
+    listItem.appendChild(retryCidButton);
+    // ... rest of the styling ...
     listItem.style.marginBottom = "15px";
     listItem.style.borderBottom = "1px solid #f0f0f0";
     listItem.style.paddingBottom = "10px";
@@ -172,12 +204,12 @@ function updateKeyHistoryDisplay() {
       const formattedTime = new Date(item.timestamp).toLocaleString("vi-VN");
 
       listItem.innerHTML = `
-      <div><strong>Time:</strong> ${formattedTime}</div>
-      <div><strong>Key:</strong> ${item.keyname_with_dash}</div>
-      <div><strong>Product:</strong> ${item.prd}</div>
-      <div><strong>Error:</strong> ${item.errorcode}</div>
-      <div><strong>Remaining:</strong> ${item.remaining}</div>
-    `;
+            <div><strong>Time:</strong> ${formattedTime}</div>
+            <div><strong>Key:</strong> ${item.keyname_with_dash}</div>
+            <div><strong>Product:</strong> ${item.prd}</div>
+            <div><strong>Error:</strong> ${item.errorcode}</div>
+            <div><strong>Remaining:</strong> ${item.remaining}</div>
+        `;
 
       const buttonContainer = document.createElement("div");
       buttonContainer.style.display = "flex";
@@ -203,7 +235,7 @@ function updateKeyHistoryDisplay() {
       recheckKeyButton.style.marginLeft = "0";
       recheckKeyButton.style.cursor = "pointer";
       recheckKeyButton.addEventListener("click", () => {
-        checkKey(item.keyname_with_dash);
+        checkKey([item.keyname_with_dash]);
       });
 
       buttonContainer.appendChild(copyKeyButton);
@@ -228,20 +260,32 @@ async function checkKey(keys) {
   if (!Array.isArray(keys) || keys.length === 0) {
     keyResultDiv.innerText = "Vui lòng nhập ít nhất một key.";
     return;
-  } // --- Modification Start ---
+  }
 
+  if (!pidkeyApiKey) {
+    keyResultDiv.innerText =
+      "Chưa lấy được API key Pidkey. Vui lòng thử lại sau.";
+    return;
+  }
+
+  // --- Modification Start ---
   keyResultDiv.innerHTML = `Đang kiểm tra ${keys.length} key...<br>`; // Clear previous results, start message
   const keptKeyInfosThisCheck = []; // Store keys kept in this specific check run
   let keptKeysCount = 0;
   let discardedKeysCount = 0;
-  const discardErrorCodes = ["0XC004C060", "0XC004C003"]; // Define codes to discard (uppercase) // --- Modification End --- // Process each key sequentially
+  const discardErrorCodes = ["0XC004C060", "0XC004C003"]; // Define codes to discard (uppercase)
+  // --- Modification End ---
+
+  // Process each key sequentially
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
     const currentKeyIndex = i + 1;
     try {
-      const encodedKey = encodeURIComponent(key); // --- Using the proxy endpoint if available, otherwise direct URL --- // Assuming you have a proxy endpoint like /pidkey-proxy?keys=...&justgetdescription=1 // const apiUrl = `/pidkey-proxy?keys=${encodedKey}&justgetdescription=1`; // If no proxy, use the direct URL (ensure CORS is handled if run in browser context directly)
-      const apiUrl = `https://pidkey.com/ajax/pidms_api?keys=${encodedKey}&justgetdescription=0&apikey=6SIYpRercJOFtUrx7OjYahpu5`; // --- --- ---
-      const response = await fetch(apiUrl); // Check if response is ok, otherwise handle error
+      const encodedKey = encodeURIComponent(key);
+      const apiUrl = `https://pidkey.com/ajax/pidms_api?keys=${encodedKey}&justgetdescription=1&apikey=${pidkeyApiKey}`;
+
+      const response = await fetch(apiUrl);
+      // Check if response is ok, otherwise handle error
       if (!response.ok) {
         throw new Error(`API request failed with status ${response.status}`);
       }
@@ -249,21 +293,22 @@ async function checkKey(keys) {
 
       if (data && Array.isArray(data) && data.length > 0) {
         const result = data[0];
-        const keyErrorCode = (result.errorcode || "N/A").toUpperCase(); // Get error code, uppercase for comparison // --- Filtering Logic ---
+        const keyErrorCode = (result.errorcode || "N/A").toUpperCase(); // Get error code, uppercase for comparison
 
+        // --- Filtering Logic ---
         if (discardErrorCodes.includes(keyErrorCode)) {
           // Discard this key
           discardedKeysCount++;
           keyResultDiv.innerHTML += `
-            <div style="margin-bottom: 10px; color: gray;">
-              <strong>Key ${currentKeyIndex}:</strong> ${
+                        <div style="margin-bottom: 10px; color: gray;">
+                            <strong>Key ${currentKeyIndex}:</strong> ${
             result.keyname_with_dash || key
           }<br>
-              <strong>Trạng thái:</strong> Đã loại bỏ (Lỗi: ${
-            result.errorcode || "N/A"
-          })
-            </div>
-          `;
+                            <strong>Trạng thái:</strong> Đã loại bỏ (Lỗi: ${
+                              result.errorcode || "N/A"
+                            })
+                        </div>
+                    `;
         } else {
           // Keep this key
           keptKeysCount++;
@@ -273,51 +318,59 @@ async function checkKey(keys) {
             errorcode: result.errorcode || "N/A",
             remaining: result.remaining || "N/A",
             timestamp: new Date().getTime(),
-          }; // Append result for this kept key
+          };
 
+          // Append result for this kept key
           keyResultDiv.innerHTML += `
-            <div style="margin-bottom: 15px;">
-              <strong>Key ${currentKeyIndex}:</strong> ${keyInfo.keyname_with_dash}<br>
-              <strong>Sản phẩm:</strong> ${keyInfo.prd}<br>
-              <strong>Mã lỗi:</strong> ${keyInfo.errorcode}<br>
-              <strong>Còn lại:</strong> ${keyInfo.remaining}
-            </div>
-          `;
+                        <div style="margin-bottom: 15px;">
+                            <strong>Key ${currentKeyIndex}:</strong> ${keyInfo.keyname_with_dash}<br>
+                            <strong>Sản phẩm:</strong> ${keyInfo.prd}<br>
+                            <strong>Mã lỗi:</strong> ${keyInfo.errorcode}<br>
+                            <strong>Còn lại:</strong> ${keyInfo.remaining}
+                        </div>
+                    `;
           keptKeyInfosThisCheck.push(keyInfo); // Add to the list of keys kept in this run
-        } // --- End Filtering Logic ---
+        }
+        // --- End Filtering Logic ---
       } else {
         // Handle cases where API returns unexpected data structure or empty array
         keyResultDiv.innerHTML += `
-           <div style="margin-bottom: 15px; color: orange;">
-             <strong>Key ${currentKeyIndex}:</strong> ${key}<br>
-             <strong>Kết quả:</strong> Không nhận được dữ liệu hợp lệ từ API
-           </div>
-         `;
+                    <div style="margin-bottom: 15px; color: orange;">
+                        <strong>Key ${currentKeyIndex}:</strong> ${key}<br>
+                        <strong>Kết quả:</strong> Không nhận được dữ liệu hợp lệ từ API
+                    </div>
+                `;
       }
     } catch (error) {
       console.error(`Lỗi khi kiểm tra key ${key}:`, error);
       keyResultDiv.innerHTML += `
-        <div style="margin-bottom: 15px; color: red;">
-          <strong>Key ${currentKeyIndex}:</strong> ${key}<br>
-          <strong>Kết quả:</strong> Lỗi khi kiểm tra key (${error.message})
-        </div>
-      `;
-    } // Optional: Add a small delay if hitting API limits is a concern // await new Promise(resolve => setTimeout(resolve, 100));
-  } // --- Modification Start: Summary and History Update --- // Append summary message
+                <div style="margin-bottom: 15px; color: red;">
+                    <strong>Key ${currentKeyIndex}:</strong> ${key}<br>
+                    <strong>Kết quả:</strong> Lỗi khi kiểm tra key (${error.message})
+                </div>
+            `;
+    }
+    // Optional: Add a small delay if hitting API limits is a concern
+    // await new Promise(resolve => setTimeout(resolve, 100));
+  }
 
+  // --- Modification Start: Summary and History Update ---
+  // Append summary message
   keyResultDiv.innerHTML += `
-    <hr>
-    <div style="margin-top: 15px; font-weight: bold;">
-      Tổng kết: Giữ lại ${keptKeysCount} key, loại bỏ ${discardedKeysCount} key (do lỗi ${discardErrorCodes.join(
+        <hr>
+        <div style="margin-top: 15px; font-weight: bold;">
+            Tổng kết: Giữ lại ${keptKeysCount} key, loại bỏ ${discardedKeysCount} key (do lỗi ${discardErrorCodes.join(
     " hoặc "
   )}).
-    </div>
-  `; // Add only the kept keys from this check run to the global history
+        </div>
+    `;
 
+  // Add only the kept keys from this check run to the global history
   if (keptKeyInfosThisCheck.length > 0) {
     keyHistory.push(...keptKeyInfosThisCheck);
     updateKeyHistoryDisplay(); // Update the history list display
-  } // --- Modification End ---
+  }
+  // --- Modification End ---
 }
 
 dropArea.style.display = "none";
