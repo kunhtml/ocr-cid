@@ -38,7 +38,7 @@ let selectedApi = null;
 let cidQueue = [];
 let processingCIDs = {};
 const CID_POLLING_INTERVAL = 5000;
-let isLoggedIn = false; // Simple state for login/logout toggle
+let isLoggedIn = false;
 
 function formatCID(cid, blockSize = 7) {
   if (!cid) return "";
@@ -57,23 +57,55 @@ function updateCidHistoryDisplay() {
 
   recentHistory.forEach((item) => {
     const listItem = document.createElement("li");
-    const formattedTime =
-      new Date(item.timestamp).toLocaleTimeString("vi-VN", {
+    const displayTimestamp = new Date(item.timestamp); // Keep using local time for display on page if needed
+    const formattedDisplayTime =
+      displayTimestamp.toLocaleTimeString("vi-VN", {
+        // Display time in local (Vietnamese)
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
       }) +
       " " +
-      new Date(item.timestamp).toLocaleDateString("vi-VN");
+      displayTimestamp.toLocaleDateString("vi-VN");
     const formattedInstallationId = formatCID(item.installationId, 7);
-    listItem.innerHTML = `<strong>${index}. Thời gian:</strong> ${formattedTime}<br><strong>ID:</strong> ${formattedInstallationId}<br><strong>CID:</strong> ${item.cid} `;
+
+    listItem.innerHTML = `<strong>${index}. Thời gian:</strong> ${formattedDisplayTime}<br><strong>ID:</strong> ${formattedInstallationId}<br><strong>CID:</strong> ${item.cid} `;
 
     const copyHistoryButton = document.createElement("button");
     copyHistoryButton.innerText = "Copy";
     copyHistoryButton.style.marginLeft = "10px";
     copyHistoryButton.style.cursor = "pointer";
     copyHistoryButton.addEventListener("click", () => {
-      let textToCopy = `Installation ID : ${formattedInstallationId}\nEnter Confirmation ID\u00A0`;
+      // --- Start Timezone Conversion and Formatting ---
+      const dateObject = new Date(item.timestamp); // Create Date object from original timestamp // 1. Format Date Part in Malaysian Timezone (Asia/Kuala_Lumpur) // Use 'en-GB' locale for DD/MM/YYYY format, includes weekday short.
+
+      const dateString = dateObject
+        .toLocaleDateString("en-GB", {
+          timeZone: "Asia/Kuala_Lumpur",
+          weekday: "short", // e.g., "Tue"
+          day: "2-digit", // e.g., "01"
+          month: "2-digit", // e.g., "04"
+          year: "numeric", // e.g., "2025"
+        })
+        .replace(/,/g, ""); // Remove potential commas added by locale formatting // 2. Format Time Part (HH:MM:SS) in Malaysian Timezone // Use 'en-US' or similar locale that reliably gives HH:MM:SS with hour12: false
+
+      const timeStringHHMMSS = dateObject.toLocaleTimeString("en-US", {
+        timeZone: "Asia/Kuala_Lumpur",
+        hour: "2-digit", // e.g., "22" (forces 24-hour format)
+        minute: "2-digit", // e.g., "40"
+        second: "2-digit", // e.g., "43"
+        hour12: false, // Use 24-hour format
+      }); // 3. Get Milliseconds (Timezone independent for a given instant) // Extract from the original date object and format
+
+      const milliseconds = String(dateObject.getMilliseconds())
+        .padStart(3, "0")
+        .substring(0, 2); // 4. Construct the final DATE and TIME lines
+
+      const dateLine = `DATE: ${dateString}`; // dateString already contains "Day DD/MM/YYYY"
+      const timeString = `${timeStringHHMMSS}.${milliseconds}`;
+      const timeLine = `TIME: ${timeString} GMT+8`; // Append the correct label // 5. Initialize textToCopy with the Malaysia-time formatted strings
+
+      let textToCopy = `${dateLine}\n${timeLine}\n\nInstallation ID : ${formattedInstallationId}\nEnter Confirmation ID\u00A0`; // --- End Timezone Conversion and Formatting ---
       const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
       let cidParts = [];
       if (item.apiSource === "pidkey") {
@@ -84,7 +116,22 @@ function updateCidHistoryDisplay() {
       for (let i = 0; i < cidParts.length; i++) {
         textToCopy += `\n${letters[i]} : ${cidParts[i]}`;
       }
-      navigator.clipboard.writeText(textToCopy);
+      navigator.clipboard
+        .writeText(textToCopy)
+        .then(() => {
+          // Optional: Add visual feedback
+          copyHistoryButton.innerText = "Đã Copy!";
+          setTimeout(() => {
+            copyHistoryButton.innerText = "Copy";
+          }, 2000);
+        })
+        .catch((err) => {
+          console.error("Failed to copy text: ", err); // Optional: Show error feedback
+          copyHistoryButton.innerText = "Lỗi Copy!";
+          setTimeout(() => {
+            copyHistoryButton.innerText = "Copy";
+          }, 2000);
+        });
     });
 
     const retryCidButton = document.createElement("button");
@@ -96,7 +143,7 @@ function updateCidHistoryDisplay() {
     });
 
     listItem.appendChild(copyHistoryButton);
-    listItem.appendChild(retryCidButton);
+    listItem.appendChild(retryCidButton); // ... rest of the styling ...
     listItem.style.marginBottom = "15px";
     listItem.style.borderBottom = "1px solid #f0f0f0";
     listItem.style.paddingBottom = "10px";
@@ -104,6 +151,7 @@ function updateCidHistoryDisplay() {
     listItem.style.alignItems = "center";
     listItem.style.justifyContent = "space-between";
     listItem.style.padding = "15px";
+
     cidHistoryList.appendChild(listItem);
     index++;
   });
@@ -124,12 +172,12 @@ function updateKeyHistoryDisplay() {
       const formattedTime = new Date(item.timestamp).toLocaleString("vi-VN");
 
       listItem.innerHTML = `
-      <div><strong>Time:</strong> ${formattedTime}</div>
-      <div><strong>Key:</strong> ${item.keyname_with_dash}</div>
-      <div><strong>Product:</strong> ${item.prd}</div>
-      <div><strong>Error:</strong> ${item.errorcode}</div>
-      <div><strong>Remaining:</strong> ${item.remaining}</div>
-    `;
+      <div><strong>Time:</strong> ${formattedTime}</div>
+      <div><strong>Key:</strong> ${item.keyname_with_dash}</div>
+      <div><strong>Product:</strong> ${item.prd}</div>
+      <div><strong>Error:</strong> ${item.errorcode}</div>
+      <div><strong>Remaining:</strong> ${item.remaining}</div>
+    `;
 
       const buttonContainer = document.createElement("div");
       buttonContainer.style.display = "flex";
@@ -168,41 +216,108 @@ function updateKeyHistoryDisplay() {
     });
 }
 
-async function checkKey(key) {
-  keyResultDiv.innerText = "Checking key...";
-  try {
-    const apiUrl = `https://pidkey.com/ajax/pidms_api?keys=${encodeURIComponent(
-      key
-    )}&justgetdescription=1&apikey=[apikey]`;
-    const response = await fetch(apiUrl);
-    const data = await response.json();
+function extractKeys(inputText) {
+  // Regular expression to find potential Windows product keys
+  const keyRegex =
+    /[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}-[A-Z0-9]{5}/g;
+  const matches = inputText.match(keyRegex);
+  return matches ? matches : [];
+}
 
-    if (data && data[0]) {
-      const result = data[0];
-      const keyInfo = {
-        keyname_with_dash: result.keyname_with_dash || "N/A",
-        prd: result.prd || "N/A",
-        errorcode: result.errorcode || "N/A",
-        remaining: result.remaining || "N/A",
-        timestamp: new Date().getTime(),
-      };
+async function checkKey(keys) {
+  if (!Array.isArray(keys) || keys.length === 0) {
+    keyResultDiv.innerText = "Vui lòng nhập ít nhất một key.";
+    return;
+  } // --- Modification Start ---
 
-      keyResultDiv.innerHTML = `
-        <strong>Key:</strong> ${keyInfo.keyname_with_dash}<br>
-        <strong>Product:</strong> ${keyInfo.prd}<br>
-        <strong>Error Code:</strong> ${keyInfo.errorcode}<br>
-        <strong>Remaining:</strong> ${keyInfo.remaining}
-      `;
+  keyResultDiv.innerHTML = `Đang kiểm tra ${keys.length} key...<br>`; // Clear previous results, start message
+  const keptKeyInfosThisCheck = []; // Store keys kept in this specific check run
+  let keptKeysCount = 0;
+  let discardedKeysCount = 0;
+  const discardErrorCodes = ["0XC004C060", "0XC004C003"]; // Define codes to discard (uppercase) // --- Modification End --- // Process each key sequentially
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const currentKeyIndex = i + 1;
+    try {
+      const encodedKey = encodeURIComponent(key); // --- Using the proxy endpoint if available, otherwise direct URL --- // Assuming you have a proxy endpoint like /pidkey-proxy?keys=...&justgetdescription=1 // const apiUrl = `/pidkey-proxy?keys=${encodedKey}&justgetdescription=1`; // If no proxy, use the direct URL (ensure CORS is handled if run in browser context directly)
+      const apiUrl = `https://pidkey.com/ajax/pidms_api?keys=${encodedKey}&justgetdescription=0&apikey=6SIYpRercJOFtUrx7OjYahpu5`; // --- --- ---
+      const response = await fetch(apiUrl); // Check if response is ok, otherwise handle error
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+      const data = await response.json();
 
-      keyHistory.push(keyInfo);
-      updateKeyHistoryDisplay();
-    } else {
-      keyResultDiv.innerText = "No data returned from API";
-    }
-  } catch (error) {
-    console.error("Error checking key:", error);
-    keyResultDiv.innerText = "Error checking key";
-  }
+      if (data && Array.isArray(data) && data.length > 0) {
+        const result = data[0];
+        const keyErrorCode = (result.errorcode || "N/A").toUpperCase(); // Get error code, uppercase for comparison // --- Filtering Logic ---
+
+        if (discardErrorCodes.includes(keyErrorCode)) {
+          // Discard this key
+          discardedKeysCount++;
+          keyResultDiv.innerHTML += `
+            <div style="margin-bottom: 10px; color: gray;">
+              <strong>Key ${currentKeyIndex}:</strong> ${
+            result.keyname_with_dash || key
+          }<br>
+              <strong>Trạng thái:</strong> Đã loại bỏ (Lỗi: ${
+            result.errorcode || "N/A"
+          })
+            </div>
+          `;
+        } else {
+          // Keep this key
+          keptKeysCount++;
+          const keyInfo = {
+            keyname_with_dash: result.keyname_with_dash || key, // Use original key if formatted one is missing
+            prd: result.prd || "N/A",
+            errorcode: result.errorcode || "N/A",
+            remaining: result.remaining || "N/A",
+            timestamp: new Date().getTime(),
+          }; // Append result for this kept key
+
+          keyResultDiv.innerHTML += `
+            <div style="margin-bottom: 15px;">
+              <strong>Key ${currentKeyIndex}:</strong> ${keyInfo.keyname_with_dash}<br>
+              <strong>Sản phẩm:</strong> ${keyInfo.prd}<br>
+              <strong>Mã lỗi:</strong> ${keyInfo.errorcode}<br>
+              <strong>Còn lại:</strong> ${keyInfo.remaining}
+            </div>
+          `;
+          keptKeyInfosThisCheck.push(keyInfo); // Add to the list of keys kept in this run
+        } // --- End Filtering Logic ---
+      } else {
+        // Handle cases where API returns unexpected data structure or empty array
+        keyResultDiv.innerHTML += `
+           <div style="margin-bottom: 15px; color: orange;">
+             <strong>Key ${currentKeyIndex}:</strong> ${key}<br>
+             <strong>Kết quả:</strong> Không nhận được dữ liệu hợp lệ từ API
+           </div>
+         `;
+      }
+    } catch (error) {
+      console.error(`Lỗi khi kiểm tra key ${key}:`, error);
+      keyResultDiv.innerHTML += `
+        <div style="margin-bottom: 15px; color: red;">
+          <strong>Key ${currentKeyIndex}:</strong> ${key}<br>
+          <strong>Kết quả:</strong> Lỗi khi kiểm tra key (${error.message})
+        </div>
+      `;
+    } // Optional: Add a small delay if hitting API limits is a concern // await new Promise(resolve => setTimeout(resolve, 100));
+  } // --- Modification Start: Summary and History Update --- // Append summary message
+
+  keyResultDiv.innerHTML += `
+    <hr>
+    <div style="margin-top: 15px; font-weight: bold;">
+      Tổng kết: Giữ lại ${keptKeysCount} key, loại bỏ ${discardedKeysCount} key (do lỗi ${discardErrorCodes.join(
+    " hoặc "
+  )}).
+    </div>
+  `; // Add only the kept keys from this check run to the global history
+
+  if (keptKeyInfosThisCheck.length > 0) {
+    keyHistory.push(...keptKeyInfosThisCheck);
+    updateKeyHistoryDisplay(); // Update the history list display
+  } // --- Modification End ---
 }
 
 dropArea.style.display = "none";
@@ -600,17 +715,23 @@ checkBalanceButton.addEventListener("click", async () => {
 });
 
 checkKeyButton.addEventListener("click", () => {
-  const key = keyInput.value.trim();
-  if (key) {
-    checkKey(key);
-    keyInput.value = "";
+  const keysInput = keyInput.value.trim();
+  if (keysInput) {
+    const extractedKeys = extractKeys(keysInput);
+    if (extractedKeys.length > 0) {
+      checkKey(extractedKeys);
+      keyInput.value = "";
+    } else {
+      keyResultDiv.innerText = "Không tìm thấy key hợp lệ.";
+    }
   } else {
-    keyResultDiv.innerText = "Please enter a key";
+    keyResultDiv.innerText = "Vui lòng nhập ít nhất một key.";
   }
 });
 
 keyInput.addEventListener("keypress", (e) => {
   if (e.key === "Enter") {
+    e.preventDefault();
     checkKeyButton.click();
   }
 });
@@ -655,6 +776,21 @@ document.addEventListener("paste", async (e) => {
     copySuccessMessage.innerText = "";
     cidResultDiv.innerHTML = "";
     cidErrorContainer.innerHTML = "";
+  } else {
+    // Handle paste event for text to extract keys
+    const pastedText = (e.clipboardData || window.clipboardData).getData(
+      "text"
+    );
+    if (pastedText) {
+      const extractedKeys = extractKeys(pastedText);
+      if (extractedKeys.length > 0) {
+        checkKey(extractedKeys);
+        keyInput.value = ""; // Optionally clear the input field after pasting
+      } else if (keyInput.value.trim() === "" && pastedText.trim() !== "") {
+        keyResultDiv.innerText =
+          "Không tìm thấy key hợp lệ trong dữ liệu đã dán.";
+      }
+    }
   }
 });
 
@@ -662,13 +798,11 @@ document.addEventListener("paste", async (e) => {
 homeBtn.addEventListener("click", (e) => {
   e.preventDefault();
   alert("Redirect to Home page (placeholder)");
-  // Replace with actual redirect logic: window.location.href = '/home';
 });
 
 paymentBtn.addEventListener("click", (e) => {
   e.preventDefault();
   alert("Redirect to Payment page (placeholder)");
-  // Replace with actual redirect logic: window.location.href = '/payment';
 });
 
 loginLogoutBtn.addEventListener("click", (e) => {
@@ -677,17 +811,14 @@ loginLogoutBtn.addEventListener("click", (e) => {
     isLoggedIn = false;
     loginLogoutBtn.innerText = "Login";
     alert("Logged out (placeholder)");
-    // Add actual logout logic here
   } else {
     isLoggedIn = true;
     loginLogoutBtn.innerText = "Logout";
     alert("Logged in (placeholder)");
-    // Add actual login logic here
   }
 });
 
 dashboardBtn.addEventListener("click", (e) => {
   e.preventDefault();
   alert("Redirect to Dashboard page (placeholder)");
-  // Replace with actual redirect logic: window.location.href = '/dashboard';
 });
